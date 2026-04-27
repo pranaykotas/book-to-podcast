@@ -51,7 +51,7 @@ def main() -> int:
     p.add_argument("input", help="path to .epub or .pdf")
     p.add_argument("--format", choices=["monologue", "conversation"],
                    default=os.environ.get("DEFAULT_FORMAT", "monologue"))
-    p.add_argument("--tts", choices=["sarvam", "elevenlabs"],
+    p.add_argument("--tts", choices=["sarvam", "elevenlabs", "kokoro"],
                    default=os.environ.get("TTS_PROVIDER", "sarvam"))
     p.add_argument("--llm", choices=["anthropic", "openai", "ollama"],
                    default=os.environ.get("LLM_PROVIDER", "anthropic"))
@@ -122,6 +122,7 @@ def main() -> int:
 
     # ── Step 3: chunk ─────────────────────────────────────────────────────────
     chunks_json = out / "chunks.json"
+    # Sarvam has a tight per-call char limit; ElevenLabs and Kokoro handle larger chunks.
     max_chars = "500" if args.tts == "sarvam" else "4500"
     print(f"\n[3/5] chunking for {args.tts} (--max-chars {max_chars})...", flush=True)
     run([sys.executable, str(SCRIPTS / "chunk.py"), str(script_md), "--max-chars", max_chars])

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Render chunks.json into a single MP3 via ElevenLabs or Sarvam.
+"""Render chunks.json into a single MP3 via ElevenLabs, Sarvam, or Kokoro.
 
-Usage: tts.py <chunks.json> <output.mp3> [--provider {elevenlabs,sarvam}]
+Usage: tts.py <chunks.json> <output.mp3> [--provider {elevenlabs,sarvam,kokoro}]
 
 Provider default comes from env TTS_PROVIDER (or 'elevenlabs').
 
@@ -10,13 +10,16 @@ ElevenLabs env: ELEVENLABS_API_KEY, HOST_A_VOICE_ID, HOST_B_VOICE_ID,
 Sarvam env: SARVAM_API_KEY, SARVAM_HOST_A_SPEAKER, SARVAM_HOST_B_SPEAKER,
   SARVAM_NARRATOR_SPEAKER, SARVAM_MODEL (default bulbul:v2),
   SARVAM_LANGUAGE (default en-IN).
+Kokoro env: KOKORO_NARRATOR_VOICE, KOKORO_HOST_A_VOICE, KOKORO_HOST_B_VOICE,
+  KOKORO_LANG_CODE (default 'a' = American English), KOKORO_SPEED (default 1.0).
+  No API key needed — runs fully locally.
 
 Speaker codes in chunks.json:
   "A" -> Host A voice
   "B" -> Host B voice
   "N" -> Narrator voice (monologue mode)
 
-Cache: <chunks_dir>/.audio_cache/piece_NNNN.mp3 — persistent, resumable.
+Cache: <chunks_dir>/.audio_cache_<provider>/piece_NNNN.mp3 — persistent, resumable.
 """
 from __future__ import annotations
 
@@ -82,6 +85,61 @@ def render_elevenlabs(text: str, speaker: str) -> bytes:
             print(f"  network error ({e}); retry {attempt+1}/{MAX_RETRIES} in {wait}s", file=sys.stderr, flush=True)
             time.sleep(wait)
     raise RuntimeError(f"elevenlabs render failed after {MAX_RETRIES} retries: {last_err}")
+
+
+# ---------- Kokoro ----------
+
+# Module-level pipeline cache so we load the model once across all chunks.
+_kokoro_pipeline: dict = {}
+
+
+def _get_kokoro_pipeline(lang_code: str):
+    if lang_code not in _kokoro_pipeline:
+        try:
+            from kokoro import KPipeline
+        except ImportError:
+            sys.exit("kokoro not installed: pip install kokoro soundfile")
+        print(f"loading Kokoro model (lang={lang_code})...", file=sys.stderr, flush=True)
+        _kokoro_pipeline[lang_code] = KPipeline(lang_code=lang_code)
+    return _kokoro_pipeline[lang_code]
+
+
+def render_kokoro(text: str, speaker: str) -> bytes:
+    from io import BytesIO
+    import numpy as np
+
+    try:
+        import soundfile as sf
+    except ImportError:
+        sys.exit("soundfile not installed: pip install soundfile")
+
+    lang_code = os.environ.get("KOKORO_LANG_CODE", "a")
+    speed = float(os.environ.get("KOKORO_SPEED", "1.0"))
+    voice_a = os.environ.get("KOKORO_HOST_A_VOICE", "af_heart")
+    voice_b = os.environ.get("KOKORO_HOST_B_VOICE", "am_adam")
+    voice_n = os.environ.get("KOKORO_NARRATOR_VOICE", "am_michael")
+
+    voice = {"A": voice_a, "B": voice_b}.get(speaker, voice_n)
+    clean_text = strip_ssml(text)
+
+    pipeline = _get_kokoro_pipeline(lang_code)
+    audio_chunks = []
+    for _, _, audio in pipeline(clean_text, voice=voice, speed=speed):
+        audio_chunks.append(audio)
+
+    if not audio_chunks:
+        raise RuntimeError("kokoro returned no audio")
+
+    full_audio = np.concatenate(audio_chunks)
+
+    # Kokoro outputs float32 at 24000 Hz — convert to MP3 via WAV intermediary.
+    wav_buf = BytesIO()
+    sf.write(wav_buf, full_audio, 24000, format="WAV")
+    wav_buf.seek(0)
+    seg = AudioSegment.from_file(wav_buf, format="wav")
+    mp3_buf = BytesIO()
+    seg.export(mp3_buf, format="mp3", bitrate="64k")
+    return mp3_buf.getvalue()
 
 
 # ---------- Sarvam ----------
@@ -162,7 +220,7 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("chunks")
     p.add_argument("output")
-    p.add_argument("--provider", choices=["elevenlabs", "sarvam"],
+    p.add_argument("--provider", choices=["elevenlabs", "sarvam", "kokoro"],
                    default=os.environ.get("TTS_PROVIDER", "elevenlabs"))
     args = p.parse_args()
 
@@ -178,11 +236,13 @@ def main() -> int:
             print("missing env: ELEVENLABS_API_KEY / HOST_A_VOICE_ID / HOST_B_VOICE_ID", file=sys.stderr)
             return 2
         render = render_elevenlabs
-    else:
+    elif args.provider == "sarvam":
         if not os.environ.get("SARVAM_API_KEY"):
             print("missing env: SARVAM_API_KEY", file=sys.stderr)
             return 2
         render = render_sarvam
+    else:  # kokoro
+        render = render_kokoro
 
     combined = AudioSegment.silent(duration=300)
     gap = AudioSegment.silent(duration=GAP_MS)

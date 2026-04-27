@@ -3,7 +3,7 @@
 Turn a non-fiction epub or pdf into a 35–45 minute podcast episode and publish it to a private RSS feed you can subscribe to from any podcast app.
 
 Two formats: **two-host conversation** (Empire-style co-hosts) or **single-narrator monologue**.  
-Two TTS providers: **ElevenLabs** (premium, ~$0.30/1k chars) or **Sarvam** (Indian voices, ~10x cheaper).
+Three TTS providers: **ElevenLabs** (premium, ~$0.30/1k chars), **Sarvam** (Indian voices, ~10x cheaper), or **Kokoro** (fully local, zero cost, no API key).
 
 This is a [Claude Code skill](https://docs.anthropic.com/en/docs/claude-code/skills) — it runs inside Claude Code sessions. Claude generates the script itself from the book, then shells out to Python scripts for TTS and publishing.
 
@@ -25,10 +25,25 @@ Claude will extract the book, generate a ~45-minute script, render MP3 via your 
 
 ### 1. Python deps
 
+Core deps (always needed):
+
 ```sh
 python3 -m pip install --user --break-system-packages \
-  ebooklib pypdf beautifulsoup4 elevenlabs pydub feedgen python-dotenv \
+  ebooklib pypdf beautifulsoup4 pydub feedgen python-dotenv \
   boto3 audioop-lts httpx
+```
+
+Provider-specific (install only what you use):
+
+```sh
+# ElevenLabs
+pip install elevenlabs
+
+# Sarvam — no extra package, uses httpx (already above)
+
+# Kokoro (local, free, no API key)
+pip install kokoro soundfile
+# First run downloads the model (~300 MB, cached in ~/.cache/huggingface/)
 ```
 
 `audioop-lts` is required on Python 3.13+ (stdlib `audioop` was removed).
@@ -152,12 +167,13 @@ python3 $SKILL/scripts/publish.py "$OUT/episode.mp3" \
 
 ## Cost reference (per book, ~43k chars)
 
-| Provider | Per book | For 4 books/week |
-|---|---|---|
-| ElevenLabs Creator | ~$13 | needs $99+/month plan |
-| Sarvam bulbul:v2 | ~₹40 (~$0.50) | ~₹160/month |
+| Provider | Per book | For 4 books/week | Notes |
+|---|---|---|---|
+| ElevenLabs Creator | ~$13 | needs $99+/month plan | Best quality |
+| Sarvam bulbul:v2 | ~₹40 (~$0.50) | ~₹160/month | Good Indian English |
+| Kokoro | free | free | Local only, American/British English voices |
 
-For regular listening, Sarvam is the only cost-viable option. Use ElevenLabs for high-value episodes where voice quality matters.
+Kokoro requires no API key and runs on your machine. On Apple Silicon a 45-min episode renders in roughly 15–25 minutes (CPU/MPS). On a machine with a CUDA GPU it's much faster. Voice quality is competitive with Sarvam for English narration.
 
 ---
 
