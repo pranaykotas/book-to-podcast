@@ -58,6 +58,24 @@ Every non-blank line is exactly one of:
 After drafting, read through and remove / rewrite:
 - Em-dashes (—)
 - "delve", "tapestry", "landscape", "navigate", "leverage", "underscore", "robust"
+
+## Indian language output (apply only when target language ≠ English)
+
+When writing in an Indian language, these rules override or supplement the above:
+
+**Script language**: Write every `[Host A]:` and `[Host B]:` line entirely in the target language. No bilingual mixing except where natural code-switching occurs in that language community.
+
+**Register**: Use natural spoken register, not translated or textbook prose. Think how an educated person discusses ideas in conversation, not how a policy document reads. For Hindi: avoid over-Sanskritised constructions; conversational Hindi is often closer to Hindustani. For Kannada/Tamil/Telugu: avoid hyper-formal literary register.
+
+**Code-switching**: Technical and policy terms (GDP, NATO, semiconductor, G20, RBI, QUAD, AI) stay in English within the text — Sarvam handles this naturally and listeners expect it.
+
+**Reference tone**: Puliyabaazi (Hindi policy podcast) — analytical, unhurried, never stuffy, uses analogies freely. For Kannada, Thale Harate is an additional reference.
+
+**Numbers**: Spell out in the target language script for numbers under 100 (e.g., Hindi: पचास, not 50; Kannada: ಐವತ್ತು, not 50). Larger figures stay as digits.
+
+**Proper nouns**: Book titles, author names, place names — keep in English or use the established transliteration for that language community.
+
+**Anti-AI-tells for Indian languages**: Avoid overly formal bureaucratic phrasing, avoid Anglicised sentence structure imposed on Indic syntax, avoid direct calques from English idioms that sound unnatural.
 - "It's important to note that...", "It's worth mentioning..."
 - "In conclusion", "To summarize", "At the end of the day"
 - Tricolons that feel scripted ("the good, the bad, and the ugly" patterns)

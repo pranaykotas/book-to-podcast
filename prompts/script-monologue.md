@@ -57,6 +57,24 @@ After drafting, read through and remove / rewrite:
 - "In conclusion", "To summarize", "At the end of the day"
 - Tricolons that feel scripted
 
+## Indian language output (apply only when target language ≠ English)
+
+When writing in an Indian language, these rules override or supplement the above:
+
+**Script language**: Write every `[Narrator]:` line entirely in the target language. No bilingual mixing except where natural code-switching occurs in that language community.
+
+**Register**: Spoken register of a knowledgeable friend — not a newsreader, not a textbook. For Hindi: conversational Hindustani, not over-Sanskritised Hindi. For Kannada/Tamil/Telugu: avoid hyper-formal literary register.
+
+**Code-switching**: Technical and policy terms (GDP, NATO, semiconductor, G20, RBI, QUAD, AI) stay in English — Sarvam handles this naturally and listeners expect it.
+
+**Reference tone**: Puliyabaazi (Hindi policy podcast) — analytical, unhurried, uses analogies freely. For Kannada, Thale Harate is an additional reference.
+
+**Numbers**: Spell out in the target language script for numbers under 100. Larger figures stay as digits.
+
+**Proper nouns**: Book titles, author names — keep in English or established transliteration.
+
+**Anti-AI-tells for Indian languages**: Avoid bureaucratic phrasing, Anglicised sentence structure imposed on Indic syntax, and direct calques from English idioms.
+
 If the `writing-anti-ai` skill is available, route the draft through it once before saving.
 
 ## Long-book fallback

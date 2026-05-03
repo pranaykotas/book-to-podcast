@@ -58,7 +58,12 @@ def parse_turns(text: str) -> list[tuple[str, str]]:
     return [(s, t) for s, t in turns if t]
 
 
-SENT_SPLIT = re.compile(r"(?<=[\.\?\!])\s+(?=[A-Z\"\'<])")
+# Handles English (. ? !) and Devanagari danda (।) sentence endings.
+# Lookahead covers ASCII uppercase, Devanagari, Tamil, Telugu, Kannada script starts.
+SENT_SPLIT = re.compile(
+    r"(?<=[\.\?\!।])\s+"
+    r"(?=[A-Zऀ-ॿ஀-௿ఀ-౿ಀ-೿\"\'<])"
+)
 
 
 def split_long_turn(text: str, max_chars: int) -> list[str]:

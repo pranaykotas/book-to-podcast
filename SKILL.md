@@ -52,21 +52,30 @@ No Quarto setup needed. MP3s and feed.xml go directly to Cloudflare R2 via `publ
 ## Workflow
 
 1. Resolve input path. Fail clearly if not `.epub` or `.pdf`.
-2. Ask the user two quick questions before proceeding:
+2. Ask the user three quick questions before proceeding:
    - **Format**: monologue (single narrator) or conversation (two-host Empire style)?
    - **Provider**: Sarvam (cheap, Indian voices) or ElevenLabs (premium)?
+   - **Language**: English (default) / Hindi (हिंदी) / Kannada (ಕನ್ನಡ) / Tamil (தமிழ்) / Telugu (తెలుగు) / other Indian language?
+     - Non-English + Kokoro → block: "Kokoro does not support Indian languages. Use Sarvam."
+     - Non-English + ElevenLabs → warn: "ElevenLabs multilingual quality for Indian languages is inconsistent. Sarvam is recommended — continue anyway?"
+     - Non-English + Sarvam + `SARVAM_MODEL=bulbul:v2` → warn: "bulbul:v2 has limited speakers. Set `SARVAM_MODEL=bulbul:v3` in .env for best quality."
 3. Run `scripts/extract.py <input>` → prints title, author, chapter list, word count, and writes `out/<slug>/book.txt`.
 4. Generate the script yourself (do NOT shell out — use Claude's own context):
    - Read `out/<slug>/book.txt`.
    - For conversation mode: read `prompts/script-empire.md`. Format every line as `[Host A]: ...` or `[Host B]: ...`.
    - For monologue mode: read `prompts/script-monologue.md`. Format every line as `[Narrator]: ...`.
+   - **If language ≠ English**: apply the "Indian language output" section at the bottom of the relevant prompt. Write the entire script in the target language.
    - If word count > ~110k words, use the two-pass fallback described in the prompt template.
    - Write the script to `out/<slug>/script.md`. Target 6,500–7,200 words.
-   - Run an anti-AI-tells pass (no em-dashes, no "delve", "tapestry", "navigate", "in conclusion"). Use writing-anti-ai skill if available; otherwise self-edit.
+   - Run an anti-AI-tells pass. Use writing-anti-ai skill if available; otherwise self-edit.
 5. Run `scripts/chunk.py out/<slug>/script.md [--max-chars N]`:
    - For ElevenLabs: default `--max-chars 4500`.
-   - For Sarvam: pass `--max-chars 500` (Sarvam has a tighter per-call limit).
-6. Run `scripts/tts.py out/<slug>/chunks.json out/<slug>/episode.mp3 [--provider P]`. Cache is persistent and per-provider; safe to retry.
+   - For Sarvam (English): `--max-chars 500`.
+   - For Sarvam (Indian language): `--max-chars 450` (extra margin for multibyte characters).
+6. Run `scripts/tts.py out/<slug>/chunks.json out/<slug>/episode.mp3 [--provider P] [--language L]`:
+   - Pass `--language <code>` when language ≠ English (e.g. `--language hi` for Hindi).
+   - Language codes: `hi` Hindi · `kn` Kannada · `ta` Tamil · `te` Telugu · `bn` Bengali · `ml` Malayalam · `mr` Marathi · `gu` Gujarati · `pa` Punjabi · `od` Odia.
+   - Cache is persistent and per-provider; safe to retry.
 7. Run `scripts/publish.py out/<slug>/episode.mp3 --title "<book title>" --author "<author>" --summary "<2-line blurb>"`. This:
    - Uploads MP3 to Cloudflare R2 bucket `$R2_BUCKET`.
    - Pulls existing `feed.xml` from R2, appends the new episode, pushes back.

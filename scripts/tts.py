@@ -2,17 +2,20 @@
 """Render chunks.json into a single MP3 via ElevenLabs, Sarvam, or Kokoro.
 
 Usage: tts.py <chunks.json> <output.mp3> [--provider {elevenlabs,sarvam,kokoro}]
+              [--language {en,hi,kn,ta,te,bn,ml,mr,gu,pa,od}]
 
 Provider default comes from env TTS_PROVIDER (or 'elevenlabs').
+Language default comes from env SARVAM_LANGUAGE (or 'en-IN'). Sarvam only.
 
 ElevenLabs env: ELEVENLABS_API_KEY, HOST_A_VOICE_ID, HOST_B_VOICE_ID,
   ELEVENLABS_MODEL (default eleven_multilingual_v2).
 Sarvam env: SARVAM_API_KEY, SARVAM_HOST_A_SPEAKER, SARVAM_HOST_B_SPEAKER,
   SARVAM_NARRATOR_SPEAKER, SARVAM_MODEL (default bulbul:v2),
   SARVAM_LANGUAGE (default en-IN).
+  For Indian languages: set SARVAM_MODEL=bulbul:v3 for best quality (43 speakers).
 Kokoro env: KOKORO_NARRATOR_VOICE, KOKORO_HOST_A_VOICE, KOKORO_HOST_B_VOICE,
   KOKORO_LANG_CODE (default 'a' = American English), KOKORO_SPEED (default 1.0).
-  No API key needed — runs fully locally.
+  No API key needed — runs fully locally. Does NOT support Indian languages.
 
 Speaker codes in chunks.json:
   "A" -> Host A voice
@@ -42,6 +45,29 @@ load_dotenv(SKILL_ROOT / ".env")
 GAP_MS = 250
 MAX_RETRIES = 4
 RETRY_BACKOFF_S = 5
+
+# Supported Indian language codes (short → full BCP-47)
+LANG_CODES: dict[str, str] = {
+    "en": "en-IN", "hi": "hi-IN", "kn": "kn-IN",
+    "ta": "ta-IN", "te": "te-IN", "bn": "bn-IN",
+    "ml": "ml-IN", "mr": "mr-IN", "gu": "gu-IN",
+    "pa": "pa-IN", "od": "od-IN",
+}
+
+# Default bulbul:v3 speakers per language
+LANG_SPEAKER_DEFAULTS: dict[str, dict[str, str]] = {
+    "en-IN": {"A": "anushka", "B": "abhilash", "N": "arya"},
+    "hi-IN": {"A": "kavya",   "B": "rohan",    "N": "priya"},
+    "kn-IN": {"A": "shruti",  "B": "mani",     "N": "kavya"},
+    "ta-IN": {"A": "kavitha", "B": "rehan",    "N": "shruti"},
+    "te-IN": {"A": "suhani",  "B": "soham",    "N": "neha"},
+    "bn-IN": {"A": "priya",   "B": "rahul",    "N": "neha"},
+    "ml-IN": {"A": "simran",  "B": "kabir",    "N": "pooja"},
+    "mr-IN": {"A": "ishita",  "B": "varun",    "N": "kavya"},
+    "gu-IN": {"A": "pooja",   "B": "amit",     "N": "priya"},
+    "pa-IN": {"A": "ritu",    "B": "dev",      "N": "manisha"},
+    "od-IN": {"A": "shreya",  "B": "manan",    "N": "neha"},
+}
 
 SSML_RE = re.compile(r"<[^>]+>")
 
@@ -152,7 +178,7 @@ def render_sarvam(text: str, speaker: str) -> bytes:
     speaker_a = os.environ.get("SARVAM_HOST_A_SPEAKER", "anushka")
     speaker_b = os.environ.get("SARVAM_HOST_B_SPEAKER", "abhilash")
     speaker_n = os.environ.get("SARVAM_NARRATOR_SPEAKER", "arya")
-    model = os.environ.get("SARVAM_MODEL", "bulbul:v2")
+    model = os.environ.get("SARVAM_MODEL", "bulbul:v3")
     lang = os.environ.get("SARVAM_LANGUAGE", "en-IN")
 
     if speaker == "A":
@@ -165,17 +191,19 @@ def render_sarvam(text: str, speaker: str) -> bytes:
     # Strip SSML — Sarvam does not support it.
     clean_text = strip_ssml(text)
 
-    payload = {
+    payload: dict = {
         "inputs": [clean_text],
         "target_language_code": lang,
         "speaker": sarvam_speaker,
         "model": model,
-        "pitch": 0,
         "pace": 1.0,
-        "loudness": 1.0,
         "speech_sample_rate": 22050,
         "enable_preprocessing": True,
     }
+    # bulbul:v3 rejects pitch and loudness parameters
+    if not model.startswith("bulbul:v3"):
+        payload["pitch"] = 0
+        payload["loudness"] = 1.0
     headers = {
         "api-subscription-key": api_key,
         "Content-Type": "application/json",
@@ -216,13 +244,68 @@ def render_sarvam(text: str, speaker: str) -> bytes:
 
 # ---------- Main ----------
 
+def _resolve_lang_code(lang: str) -> str:
+    """Accept short code (hi) or full code (hi-IN), return full BCP-47 code."""
+    if "-" in lang:
+        return lang
+    return LANG_CODES.get(lang.lower(), lang)
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("chunks")
     p.add_argument("output")
     p.add_argument("--provider", choices=["elevenlabs", "sarvam", "kokoro"],
                    default=os.environ.get("TTS_PROVIDER", "elevenlabs"))
+    p.add_argument(
+        "--language",
+        metavar="LANG",
+        default=None,
+        help="Output language code: en hi kn ta te bn ml mr gu pa od (Sarvam only).",
+    )
     args = p.parse_args()
+
+    # Resolve and apply language override
+    if args.language:
+        lang_code = _resolve_lang_code(args.language)
+        if args.provider == "kokoro":
+            print(
+                "error: Kokoro does not support Indian languages. "
+                "Use --provider sarvam instead.",
+                file=sys.stderr,
+            )
+            return 2
+        if args.provider == "elevenlabs":
+            print(
+                "warning: ElevenLabs multilingual quality for Indian languages is "
+                "inconsistent. Sarvam (--provider sarvam) gives better results.",
+                file=sys.stderr,
+            )
+        # Override env language
+        os.environ["SARVAM_LANGUAGE"] = lang_code
+        # Apply per-language speaker defaults for bulbul:v3 (only if not set in env)
+        model = os.environ.get("SARVAM_MODEL", "bulbul:v2")
+        if lang_code != "en-IN" and model.startswith("bulbul:v2"):
+            print(
+                f"warning: SARVAM_MODEL=bulbul:v2 has only 7 speakers. "
+                f"Set SARVAM_MODEL=bulbul:v3 in .env for better Indian language quality.",
+                file=sys.stderr,
+            )
+        defaults = LANG_SPEAKER_DEFAULTS.get(lang_code, {})
+        if defaults and not model.startswith("bulbul:v2"):
+            if not os.environ.get("SARVAM_HOST_A_SPEAKER"):
+                os.environ["SARVAM_HOST_A_SPEAKER"] = defaults["A"]
+            if not os.environ.get("SARVAM_HOST_B_SPEAKER"):
+                os.environ["SARVAM_HOST_B_SPEAKER"] = defaults["B"]
+            if not os.environ.get("SARVAM_NARRATOR_SPEAKER"):
+                os.environ["SARVAM_NARRATOR_SPEAKER"] = defaults["N"]
+        print(
+            f"language: {lang_code}  "
+            f"host_a={os.environ.get('SARVAM_HOST_A_SPEAKER', '?')}  "
+            f"host_b={os.environ.get('SARVAM_HOST_B_SPEAKER', '?')}  "
+            f"narrator={os.environ.get('SARVAM_NARRATOR_SPEAKER', '?')}",
+            file=sys.stderr,
+        )
 
     chunks_path = Path(args.chunks).expanduser().resolve()
     out_path = Path(args.output).expanduser().resolve()
