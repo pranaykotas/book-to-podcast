@@ -3,7 +3,8 @@
 Turn a non-fiction epub or pdf into a 35–45 minute podcast episode and publish it to a private RSS feed you can subscribe to from any podcast app.
 
 Two formats: **two-host conversation** (Empire-style co-hosts) or **single-narrator monologue**.  
-Three TTS providers: **ElevenLabs** (premium, ~$0.30/1k chars), **Sarvam** (Indian voices, ~10x cheaper), or **Kokoro** (fully local, zero cost, no API key).
+Three TTS providers: **ElevenLabs** (premium, ~$0.30/1k chars), **Sarvam** (Indian voices, ~10x cheaper), or **Kokoro** (fully local, zero cost, no API key).  
+**Indian language output** supported via Sarvam: Hindi, Kannada, Tamil, Telugu, and 7 more.
 
 This is a [Claude Code skill](https://docs.anthropic.com/en/docs/claude-code/skills) — it runs inside Claude Code sessions. Claude generates the script itself from the book, then shells out to Python scripts for TTS and publishing.
 
@@ -17,7 +18,9 @@ In any Claude Code session:
 /book-to-podcast ~/Downloads/some-book.epub
 ```
 
-Claude will extract the book, generate a ~45-minute script, render MP3 via your configured TTS provider, upload to Cloudflare R2, and print your subscribe URL.
+Claude will ask three questions — format, provider, and language — then extract the book, generate a ~45-minute script, render MP3, upload to Cloudflare R2, and print your subscribe URL.
+
+For an Indian language episode, just answer "Hindi" (or Kannada/Tamil/Telugu) when asked. Claude writes the entire script in that language and passes `--language hi` to the TTS step automatically.
 
 ---
 
@@ -76,8 +79,8 @@ SARVAM_API_KEY=...
 SARVAM_HOST_A_SPEAKER=anushka
 SARVAM_HOST_B_SPEAKER=abhilash
 SARVAM_NARRATOR_SPEAKER=arya
-SARVAM_MODEL=bulbul:v2
-SARVAM_LANGUAGE=en-IN
+SARVAM_MODEL=bulbul:v2       # use bulbul:v3 for Indian language output
+SARVAM_LANGUAGE=en-IN        # default; overridden at run time via --language
 
 FEED_OWNER_NAME=Your Name
 FEED_OWNER_EMAIL=you@example.com
@@ -139,6 +142,32 @@ The cache directories let you safely retry a failed render without spending cred
 
 ---
 
+## Indian language output
+
+Supported via Sarvam bulbul:v3: **Hindi, Kannada, Tamil, Telugu, Bengali, Malayalam, Marathi, Gujarati, Punjabi, Odia**.
+
+**Requirements:**
+- `SARVAM_MODEL=bulbul:v3` in your `.env` (bulbul:v2 has only 7 speakers and may produce lower quality)
+- Sarvam API key
+
+**When using Claude Code:** just answer "Hindi" (or any supported language) when Claude asks. Everything else is automatic.
+
+**Manual usage:** pass `--language hi` (or `kn`, `ta`, `te`, etc.) to `tts.py`. You must also write the script in that language yourself.
+
+**Default speakers by language (bulbul:v3, applied automatically if not set in env):**
+
+| Language | Code | Host A | Host B | Narrator |
+|----------|------|--------|--------|----------|
+| English | en-IN | anushka | abhilash | arya |
+| Hindi | hi-IN | kavya | rohan | priya |
+| Kannada | kn-IN | shruti | mani | kavya |
+| Tamil | ta-IN | kavitha | rehan | shruti |
+| Telugu | te-IN | suhani | soham | neha |
+
+Override any speaker at run time: `SARVAM_HOST_A_SPEAKER=priya python3 scripts/tts.py ...`
+
+---
+
 ## Manual usage (without Claude)
 
 ```sh
@@ -151,11 +180,17 @@ python3 $SKILL/scripts/extract.py ~/Downloads/some-book.epub "$OUT"
 
 # 2. Write $OUT/script.md, or have Claude do it.
 
-# 3. Chunk (500 chars for Sarvam; 4500 for ElevenLabs)
+# 3. Chunk
+# English Sarvam: --max-chars 500
+# Indian language Sarvam: --max-chars 450
+# ElevenLabs: --max-chars 4500 (default)
 python3 $SKILL/scripts/chunk.py "$OUT/script.md" --max-chars 500
 
-# 4. Render
+# 4. Render (English)
 python3 $SKILL/scripts/tts.py "$OUT/chunks.json" "$OUT/episode.mp3" --provider sarvam
+
+# 4. Render (Hindi — requires SARVAM_MODEL=bulbul:v3 in .env)
+python3 $SKILL/scripts/tts.py "$OUT/chunks.json" "$OUT/episode.mp3" --provider sarvam --language hi
 
 # 5. Publish
 python3 $SKILL/scripts/publish.py "$OUT/episode.mp3" \
