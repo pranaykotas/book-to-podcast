@@ -76,8 +76,11 @@ No Quarto setup needed. MP3s and feed.xml go directly to Cloudflare R2 via `publ
    - Pass `--language <code>` when language ≠ English (e.g. `--language hi` for Hindi).
    - Language codes: `hi` Hindi · `kn` Kannada · `ta` Tamil · `te` Telugu · `bn` Bengali · `ml` Malayalam · `mr` Marathi · `gu` Gujarati · `pa` Punjabi · `od` Odia.
    - Cache is persistent and per-provider; safe to retry.
+   - Also writes `episode.srt` next to `episode.mp3` — one cue per chunk, with `Host A:` / `Host B:` / `Narrator:` speaker prefixes.
+   - Also writes `episode.mp4` (black 720² still + MP3 audio + soft-subbed SRT) for desktop preview in IINA / QuickTime / VLC. Local-only; not uploaded.
 7. Run `scripts/publish.py out/<slug>/episode.mp3 --title "<book title>" --author "<author>" --summary "<2-line blurb>"`. This:
    - Uploads MP3 to Cloudflare R2 bucket `$R2_BUCKET`.
+   - Also uploads the sibling `episode.srt` if present (matching basename, `.srt` extension).
    - Pulls existing `feed.xml` from R2, appends the new episode, pushes back.
    - Both MP3 and feed.xml live on R2 only — no GitHub commit needed.
 8. Print the subscribe URL: `$R2_PUBLIC_BASE/feed.xml`. On first episode, instruct user to add it once in Pocket Casts / AntennaPod on Android.
@@ -108,4 +111,6 @@ $WORK_DIR/<slug>/
   script.md
   chunks.json
   episode.mp3
+  episode.srt
+  episode.mp4   # local-only, for desktop preview with subs
 ```

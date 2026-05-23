@@ -149,6 +149,17 @@ def main() -> int:
         ExtraArgs={"ContentType": "audio/mpeg"},
     )
 
+    srt_path = src_mp3.with_suffix(".srt")
+    srt_url: str | None = None
+    if srt_path.exists():
+        srt_key = f"{slug}.srt"
+        srt_url = f"{public_base.rstrip('/')}/{srt_key}"
+        print(f"uploading {srt_path.name} to R2...", file=sys.stderr, flush=True)
+        client.upload_file(
+            str(srt_path), bucket, srt_key,
+            ExtraArgs={"ContentType": "application/x-subrip; charset=utf-8"},
+        )
+
     # Pull existing feed, append new item, push back.
     items = fetch_existing_feed(client, bucket)
     items.append({
@@ -168,6 +179,8 @@ def main() -> int:
 
     feed_url = f"{public_base.rstrip('/')}/{FEED_KEY}"
     print(f"Episode published: {public_url}")
+    if srt_url:
+        print(f"Subtitles:         {srt_url}")
     print(f"Subscribe URL:     {feed_url}")
     print(f"Size:              {size_bytes/1024/1024:.1f} MB")
     return 0

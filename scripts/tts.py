@@ -31,6 +31,8 @@ import base64
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -75,6 +77,64 @@ SSML_RE = re.compile(r"<[^>]+>")
 def strip_ssml(text: str) -> str:
     """Remove SSML tags for providers that do not support them."""
     return SSML_RE.sub("", text).strip()
+
+
+SPEAKER_LABEL = {"A": "Host A", "B": "Host B", "N": "Narrator"}
+
+SRT_TARGET_WORDS = 6
+SRT_MAX_WORDS = 8
+
+
+def fmt_srt_time(ms: int) -> str:
+    h, rem = divmod(ms, 3_600_000)
+    m, rem = divmod(rem, 60_000)
+    s, ms_part = divmod(rem, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms_part:03d}"
+
+
+def srt_escape(text: str) -> str:
+    return strip_ssml(text).replace("\r", "").strip()
+
+
+def split_into_cards(text: str) -> list[str]:
+    text = text.strip()
+    if not text:
+        return []
+    words = text.split()
+    cards: list[str] = []
+    cur: list[str] = []
+    for w in words:
+        cur.append(w)
+        last = w[-1:]
+        if last in ".!?" and len(cur) >= 3:
+            cards.append(" ".join(cur))
+            cur = []
+        elif len(cur) >= SRT_TARGET_WORDS and last in ",;:":
+            cards.append(" ".join(cur))
+            cur = []
+        elif len(cur) >= SRT_MAX_WORDS:
+            cards.append(" ".join(cur))
+            cur = []
+    if cur:
+        cards.append(" ".join(cur))
+    return cards
+
+
+def allocate_card_times(cards: list[str], start_ms: int, end_ms: int) -> list[tuple[int, int]]:
+    if not cards:
+        return []
+    total_chars = sum(len(c) for c in cards) or 1
+    total_dur = max(1, end_ms - start_ms)
+    times: list[tuple[int, int]] = []
+    cursor = start_ms
+    for i, card in enumerate(cards):
+        if i == len(cards) - 1:
+            times.append((cursor, end_ms))
+        else:
+            dur = int(total_dur * len(card) / total_chars)
+            times.append((cursor, cursor + dur))
+            cursor += dur
+    return times
 
 
 # ---------- ElevenLabs ----------
@@ -329,6 +389,9 @@ def main() -> int:
 
     combined = AudioSegment.silent(duration=300)
     gap = AudioSegment.silent(duration=GAP_MS)
+    cursor_ms = 300
+
+    srt_cues: list[tuple[int, int, str, str]] = []
 
     cached_count = 0
     rendered_count = 0
@@ -342,7 +405,10 @@ def main() -> int:
             piece_path.write_bytes(audio_bytes)
             rendered_count += 1
         piece = AudioSegment.from_file(piece_path, format="mp3")
+        piece_ms = len(piece)
+        srt_cues.append((cursor_ms, cursor_ms + piece_ms, c["speaker"], c["text"]))
         combined += piece + gap
+        cursor_ms += piece_ms + GAP_MS
 
     print(f"cached: {cached_count}, rendered: {rendered_count}", file=sys.stderr, flush=True)
 
@@ -350,9 +416,52 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     combined.export(out_path, format="mp3", bitrate="64k")
 
+    srt_path = out_path.with_suffix(".srt")
+    with srt_path.open("w", encoding="utf-8") as fh:
+        cue_idx = 1
+        prev_speaker: str | None = None
+        for start, end, speaker, text in srt_cues:
+            cards = split_into_cards(srt_escape(text))
+            if not cards:
+                continue
+            times = allocate_card_times(cards, start, end)
+            for i, (card, (cs, ce)) in enumerate(zip(cards, times)):
+                if i == 0 and speaker != prev_speaker:
+                    line = f"{SPEAKER_LABEL.get(speaker, speaker)}: {card}"
+                else:
+                    line = card
+                fh.write(f"{cue_idx}\n")
+                fh.write(f"{fmt_srt_time(cs)} --> {fmt_srt_time(ce)}\n")
+                fh.write(f"{line}\n\n")
+                cue_idx += 1
+            prev_speaker = speaker
+
+    mp4_path = out_path.with_suffix(".mp4")
+    if shutil.which("ffmpeg"):
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=c=black:s=720x720:r=1",
+            "-i", str(out_path),
+            "-i", str(srt_path),
+            "-map", "0:v", "-map", "1:a", "-map", "2:s",
+            "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+            "-c:a", "copy",
+            "-c:s", "mov_text",
+            "-metadata:s:s:0", "language=eng",
+            "-shortest", str(mp4_path),
+        ]
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"warning: ffmpeg mp4 wrap failed ({e}); skipping .mp4", file=sys.stderr)
+    else:
+        print("warning: ffmpeg not found in PATH; skipping .mp4", file=sys.stderr)
+
     print(json.dumps({
         "provider": args.provider,
         "out": str(out_path),
+        "srt": str(srt_path),
+        "mp4": str(mp4_path) if mp4_path.exists() else None,
         "duration_seconds": round(len(combined) / 1000, 1),
         "chunks_rendered": rendered_count,
         "chunks_cached": cached_count,
